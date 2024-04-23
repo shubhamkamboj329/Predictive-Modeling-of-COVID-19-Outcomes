@@ -1,0 +1,1180 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+
+---
+title: "Predictive Modeling of COVID-19 Outcomes"
+author: "Shubham Kamboj (DSTC-22/23-014)"
+date: "2023-05-29"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+**Reading CSV file from System**
+
+```{r}
+ #rm(list= ls())
+
+start_time <- Sys.time()
+
+library(Boruta)
+library(mlbench)
+library(caret)
+library(randomForest)
+library(caTools)
+library(e1071)
+library(ggplot2)
+
+
+
+
+```
+
+
+```{r}
+data<- read.csv("C:/Users/USER/OneDrive - students.sau.ac.in/Desktop/Rfiles/University Project on Covid19/covid.csv")
+
+# str(data)
+
+
+```
+**factoring variables which are multicategorical **
+
+```{r}
+
+columns_to_factor <- c("sex","coronaseve","obesity","htn","dm","cad",
+                       "copd","ckd","cva","lvdys","asthma","copd1","tb",
+                       "malignancy","typeofmali","liverillne","fever",
+                       "cough","dyspnoea","diarrhea","nauseavom","gitcomp",
+                       "respirator","anemia","throbocyto","lft","sgot","sgpt",
+                       "aki","abgacidos","ddimer","serumfibri","sferrtin",
+                       "il6","lqtinter","sinustachy","arrhythmia","supreavent",
+                       "pac","mat","at","af0","afl","psvt","ventricula", "vpc",
+                       "nonsusvt"   ,"sustvt","vf","bradyarrhy","firstdegav",
+                       "seconavblo", "thirdavblo" ,"oxygenrequ","cxrpneu",
+                       "patchprsen","patchlobel", "pleuraleff", "oxygenreq1",
+                       "ventilator", "noninvasie", "invasive" ,  "arrythmia" ,
+                       "icushift",   "death", "lmwh","ramdesevir" ,"steroid" ,
+                       "sitetb" , "sarsseveri" , "cadtype", "patchside" ,
+                       "lmwhdoseus", "ntprobnp", "tropt" , "sars", 
+                       "coviddeath", "noncovidde" , "procovidde", "discharge")
+# colnames(data)
+
+
+for(i in columns_to_factor){
+  data[,i] <- factor(data[,i])
+}
+
+#summary(data)
+
+
+```
+**counts of NA's**
+
+
+*Count of missing values patient wise*
+
+```{r}
+
+data_sno <- cbind(sno = 1:nrow(data) , data)
+
+
+# loop to count the missing values for each row
+
+p_na_count<-c() # this is empty vector which will store count of NA's 
+for (i in 1:nrow(data_sno)){
+  x<-0
+  for(j in 1:ncol(data_sno)){
+    if(is.na(data_sno[i,j]) == T){
+      x <- x + 1
+    }
+    p_na_count[i] <- x
+  }
+}
+
+na_count_p <- cbind(pt_sno = data_sno[,1] , total_na = p_na_count)
+NA_count_p <- na_count_p[ order(-p_na_count) ,  ] # ordering of p_na_count
+head(NA_count_p , 40) 
+
+g <- NA_count_p[1:36 , 1] # refer NA_count_p to find number 36
+# g contains row no of patient having 15 or more attributes missing
+
+
+data_lna <- data_sno[-g , ]  # droping those patients from study
+
+#write.csv(data_lna , file = "D:\\machine learning materials\\data_lna.csv" )
+data<- data_lna[ , -1] # removing sno from the data set
+dim(data)
+
+#summary(data)
+
+```
+```{r}
+boxplot(data$age ~ data$coronaseve ,
+        xlab = "coronaseve" , ylab = "Age" ,
+        main = "Age vs Severity" , 
+        sub ="0 is mild or moderate , 1 is severe" ,
+        col = c("wheat" , "steelblue"))
+
+boxplot(data$spo2 ~ data$coronaseve,
+        xlab= "cornonaseve" , ylab = "spo2",
+        main = "spo2 vs severity" , 
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue")) 
+boxplot(data$resrate ~ data$coronaseve,
+        xlab= "cornonaseve" , ylab = "Resrate",
+        main = "Respirartory rate vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+boxplot(data$bun ~ data$coronaseve,
+        xlab= "cornonaseve" , ylab = "Blood Urea Nitrogen",
+        main = "Blood Urea Nitrogen level vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+boxplot(data$abgph ~ data$coronaseve,
+        xlab= "cornonaseve" , ylab = "abgph",
+        main = "pH value of Arterial Blood Gas(ABG pH) vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+boxplot(data$abgspo2 ~ data$coronaseve,
+        xlab= "coronaseve" , ylab = "ABG Spo2",
+        main = "ABG Spo2 vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+```
+```{r}
+
+# Create a bar plot using ggplot between coronaseve & respirator
+ggplot(data, aes(x = coronaseve, fill =   respirator)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "respirator") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+# Create a bar plot using ggplot between coronaseve &  ventricula
+ggplot(data, aes(x = coronaseve, fill =    ventricula)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " ventricula") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  vpc
+ggplot(data, aes(x = coronaseve, fill =    vpc)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "vpc") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+# Create a bar plot using ggplot between coronaseve &  oxygenrequ
+ggplot(data, aes(x = coronaseve, fill =    oxygenrequ)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "oxygenrequ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  cxrpneu
+ggplot(data, aes(x = coronaseve, fill =    cxrpneu)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "cxrpneu") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+
+
+# Create a bar plot using ggplot between coronaseve &  patchprsen
+ggplot(data, aes(x = coronaseve, fill =    patchprsen)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "patchprsen") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+
+# Create a bar plot using ggplot between coronaseve &  patchside
+ggplot(data, aes(x = coronaseve, fill =    patchside)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "patchside") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No lobe", "Bilateral lung lobe",
+                                    "Right", "Left")) +
+     theme_minimal()
+
+
+
+# Create a bar plot using ggplot between coronaseve &  patchlobel
+ggplot(data, aes(x = coronaseve, fill =    patchlobel)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " patchlobel") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Lower","Middle","Upper",
+                                    "Lower+Middle" ,"Multi")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  oxygenreq1
+ggplot(data, aes(x = coronaseve, fill =    oxygenreq1)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " oxygenreq1") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  noninvasie
+ggplot(data, aes(x = coronaseve, fill =    noninvasie)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " noninvasie") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  invasive
+ggplot(data, aes(x = coronaseve, fill =    invasive)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " invasive") +
+     scale_x_discrete(labels =c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  lmwh 
+ggplot(data, aes(x = coronaseve, fill =    lmwh )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " lmwh ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  lmwhdoseus
+ggplot(data, aes(x = coronaseve, fill =    lmwhdoseus )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " lmwhdoseus ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("Not given", "OD", "BD")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  ramdesevir
+ggplot(data, aes(x = coronaseve, fill =    ramdesevir )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " ramdesevir ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+# Create a bar plot using ggplot between coronaseve &  steroid
+ggplot(data, aes(x = coronaseve, fill =    steroid )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " steroid ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+
+
+
+```
+
+**Count of missing values predictor wise**
+
+
+```{r}
+a<-colnames(data)
+na_count<-rep(NA,ncol(data))
+for (i in 1:ncol(data)){
+  na_count[i]<- sum(is.na(data[,i]))
+}
+na<-cbind(a , na_count)
+na<-na[order(-na_count) , ]
+## Arranging na_counts in descending order 
+## and suffling corresponding a's as well
+NA_count<- na[which(na[,2] != 0) , ]
+NA_count
+dim(NA_count)
+# NA_count gives us information about no of NA in given variable
+```
+
+
+**Imputing *Height(ht)* and *Weight (weig)* of Patient assuming Normal**
+**Distribution and doing Random sampling from distribution of observed data**
+```{r}
+
+data_imputed <- data
+# dim(data_imputed)
+# 
+# ## trying to omit observations with missing values
+na_omit_data <- na.omit(data)
+dim(na_omit_data)
+```
+
+
+
+```{r}
+
+print("Height and Weight can be assumed Normally Distributed")
+hist(data$ht , main = "Histogram of Height" , col = "gray55" , border = T, 
+     xlab= "height")
+hist(data$weig, main = "Histogram of Weight", col = "olivedrab4" , border = T,
+     xlab = "weight")
+
+rnormimpfun <- function(x){
+  # makinga subset of x, to remove the effect of any potential outlier
+  y <- subset(x , 
+              x > quantile(x , 0.25 , na.rm = T) , 
+              x < quantile(x , 0.75 , na.rm = T))
+  
+ for(i in 1:length(x)){
+   if(is.na(x[i]) == TRUE ){
+     x[i] <- round( rnorm(1, mean=mean(y , na.rm = T), sd=sd(y) ), 2)
+                   
+    }
+  }
+  return(x)
+}
+
+
+summary(data$ht)
+
+```
+**Imputation of Height**
+ 
+ 
+```{r}
+
+data_imputed$ht <- rnormimpfun(data$ht)
+
+# ## Summary of height (ht) after imputation
+# summary(data_imputed$ht)
+# 
+# ## summary of height before imputation
+# summary(data$ht)
+
+```
+
+**Imputation of weight**
+
+```{r}
+#summary(data$weig)
+
+data_imputed$weig <- rnormimpfun(data$weig)
+
+# ## Summary of weight (weig) after imputation
+# summary(data_imputed$weig)
+# 
+# ## Summary of weight (weig) before imputation
+# summary(data$weig)
+
+```
+**Impuation of BMI **
+
+```{r}
+for (i in 1:length(data_imputed$bmi)){
+  if (is.na(data_imputed$bmi[i]) == T){
+    data_imputed$bmi[i] <- (data_imputed$weig[i]/(data_imputed$ht[i]/100)^2)
+  }
+}
+
+
+# ## Summary of bmi (bmi) after imputation
+# summary(data_imputed$bmi)
+# 
+# ## Summary of bmi (bmi) before imputation 
+# summary(data$bmi)
+# 
+# 
+
+```
+**Imputation of obesity, based on bmi calculation**
+
+```{r}
+# 
+for( i in 1:length(data$obesity ) ){
+  if(is.na(data$obesity[i]) == T ){
+    if(data_imputed$bmi[i] >= 25 ){
+      data_imputed$obesity[i] <- 1
+    }else{data_imputed$obesity[i] <- 0}
+  }
+}
+
+
+```
+
+# Imputation of continuous variable whose na_count is less than or equal to 20
+
+We choosed to impute with random values form the range of observed data as 
+number of missing values were less than 10%
+```{r}
+
+col_names_cont <- c("hr" , "bun", "potassium" , "sodium", "creatinine",
+                    "hb", "plateletco" , "tlc" , "spo2" , "correctedq" , 
+                    "qtinterval" , "ecgheartra" , "resrate" , "ddimaerva", 
+                    "il6absbva", "abgph" , "serumferri" , "abgspo2" )
+
+
+
+length(col_names_cont)
+
+for(i in col_names_cont){
+  x <- x + 1
+  summary(data[,i])
+  data_imputed[, i][is.na(data_imputed[,i])] <- 
+    round(runif(sum(is.na(data_imputed[, i])),
+                min = quantile(data[,i] , 0.25 , na.rm = T) , 
+                max = quantile(data[,i] , 0.75 , na.rm = T)) ,2)
+  summary(data_imputed[,i])
+  }
+
+```
+**Imputation of categorical variables**
+
+
+*We can impute missing values with central measure for the variables which*
+*has 20 or less number of missing values. As 20 is less than even 10% of total*
+*number of observations we have!**
+
+
+```{r}
+# collection of col names that need to be imputed with Mode values
+
+col_imputed_mode <- c("ramdesevir", "oxygenreq1", "pleuraleff", "patchlobel", 
+                  "patchside" , "patchprsen" , "cxrpneu" , "htn",
+                  "sinustachy","aki" , "sgpt" , "sgot" , "lft", "anemia",
+                  "lqtinter", "throbocyto", "ddimer" , "cadtype", "abgacidos" ,
+                  "il6", "sferrtin", "serumfibri" )
+
+
+# # Funtion for Statistical mode values in any vector x
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+
+for(j in col_imputed_mode){
+  mod<- Mode(data[,j]) # Mode is pre-defined function for Statistical mode
+  for(i in 1:nrow(data_imputed)){
+    if(is.na(data_imputed[i , j]) == T){
+      data_imputed[i , j] <- mod
+    }
+  }
+}
+
+
+```
+Let's check number of missing values left
+
+```{r}
+
+a<-colnames(data_imputed)
+na_count<-rep(NA,ncol(data_imputed))
+for (i in 1:ncol(data_imputed)){
+  na_count[i]<- sum(is.na(data_imputed[,i]))
+}
+
+na<-cbind(a , na_count)
+
+na<-na[order(-na_count) , ] ## Arranging na_counts in descending order
+## and suffling corresponding a's as well
+
+NA_count<- na[which(na[,2] != 0) , ] # selecting which has non zero no of NA's
+NA_count
+#dim(NA_count)
+
+```
+
+Variables with missing values more than **30** 
+
+One easy option is to drop these variables, will have to drop only 9 variables
+out of 111, and try building some model which can significantly help us in
+solving this classification problem. Another thing we can do is analyse the
+reason of missingness and proceed according to that.
+
+**For now let's drop those variables**
+
+```{r}
+# Check for null values in each column
+null_columns <- colSums(is.na(data_imputed)) > 0
+
+# Print the names of columns with null values
+names_with_null <- names(null_columns[null_columns])
+#print(names_with_null)
+# Create a vector of column names to be removed (These columns have null values
+# greater than 19)
+
+columns_to_remove <- names_with_null
+  
+# Remove the specified columns from the data frame
+
+data_non_null <- data_imputed[, !names(data_imputed) %in% columns_to_remove]
+#str(data_non_null)
+dim(data_non_null)
+
+
+# run the code below to verify no NA's left
+
+# a<-colnames(data_non_null)
+# na_count<-rep(NA,ncol(data_non_null))
+# for (i in 1:ncol(data_non_null)){
+#   na_count[i]<- sum(is.na(data_non_null[,i]))
+# }
+# 
+# na<-cbind(a , na_count)
+# 
+# na<-na[order(-na_count) , ] ## Arranging na_counts in descending order
+# ## and suffling corresponding a's as well
+# 
+# NA_count<- na[which(na[,2] != 0),] #selecting which has non zero no of NA's
+# NA_count
+# #dim(NA_count)
+
+
+```
+
+**Severity**
+
+
+
+```{r}
+# Create a vector of column names to be removed (According to me these are 
+# not necessary for the classification models for severity )
+
+remove_col_unnecessary<-c( "name","coviddeath","noncovidde","procovidde",
+                           "discharge" , "los" , "ventilator", "icushift" ,
+                           "death" )
+
+data_seve<-data_non_null[, !names(data_non_null) %in%  remove_col_unnecessary]
+
+dim(data_seve)
+
+#summary(data_seve)
+
+
+```
+**Application of Boruta for feature selection **
+```{r}
+
+# Feature Selection
+set.seed(111)
+boruta_seve <- Boruta(coronaseve ~ ., data = data_seve, maxRuns = 500)
+
+# The above command applies the Boruta feature selection algorithm to
+# the dataset data_seve . The formula death ~ . specifies that
+# the variable death is the outcome variable, and . indicates that all other
+# variables in the dataset are considered as potential predictors. The doTrace
+# parameter controls the level of verbosity during the Boruta analysis, with
+# a value of 2 indicating more detailed output. The maxRuns parameter 
+# specifies the maximum number of iterations to run the algorithm. The result
+# of the Boruta analysis is stored in the boruta_seve object.
+
+print(boruta_seve)
+
+#The above command prints the summary or information about the boruta object.
+# It displays the variables considered in the Boruta analysis, their 
+# importance scores, and the final decision on whether they are selected
+# as important predictors or not. This information helps assess the relevance
+# of variables in predicting the outcome variable (death) based on the
+# Boruta analysis.
+
+plot(boruta_seve, las = 2, cex.axis = 0.7)
+# Above command is used to create a plot of the Boruta analysis results. 
+# The boruta_seve object is passed as the argument, and additional parameters
+#  las and cex.axis are used to modify the appearance of the plot. las controls
+# the orientation of the axis labels, and cex.axis controls the size of the
+# axis labels. By customizing these parameters, you can enhance the 
+# readability of the plot and visualize the importance of variables determined 
+# by Boruta.
+
+plotImpHistory(boruta_seve)
+
+
+bor <- TentativeRoughFix(boruta_seve)
+print(bor)
+att_seve<-attStats(boruta_seve)
+
+
+
+```
+# Data Visualization, of Important features with coronaseve
+
+
+
+```{r}
+conf_var_seve <- c("coronaseve" , "age" , "respirator" , "spo2" , "resrate" ,
+                   "bun" , "abgph" , "abgspo2" , "ventricula" , "vpc" ,
+                   "oxygenrequ" , "cxrpneu" , "patchprsen" , "patchside" ,
+                   "patchlobel" , "oxygenreq1" , "noninvasie" , "invasive" ,
+                   "lmwh" , "lmwhdoseus" , "ramdesevir" , "steroid")
+# conf_var_seve contains columns names those are important
+
+data_seve_conf <- data_seve[, conf_var_seve]
+
+summary(data_seve_conf)
+
+
+```
+
+```{r}
+boxplot(data_seve$age ~ data_seve$coronaseve , 
+        main = "age vs severity" , 
+        sub ="0 is mild severe , 1 is severe" ,
+        col = c("wheat" , "steelblue"))
+
+boxplot(data_seve$spo2 ~ data_seve$coronaseve,
+        xlab= "cornonaseve" , ylab = "spo2",
+        main = "spo2 vs severity" , 
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue")) 
+boxplot(data_seve$resrate ~ data_seve$coronaseve,
+        xlab= "cornonaseve" , ylab = "resrate",
+        main = "Respirartory rate vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+
+boxplot(data_seve$bun ~ data_seve$coronaseve,
+        xlab= "cornonaseve" , ylab = "blood urea nitrogen",
+        main = "Blood Urea Nitrogen level vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+
+boxplot(data_seve$abgph ~ data_seve$coronaseve,
+        xlab= "cornonaseve" , ylab = "blood urea nitrogen",
+        main = "pH value of Arterial Blood Gas(ABG pH) vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+
+boxplot(data_seve$abgspo2 ~ data_seve$coronaseve,
+        xlab= "ABG Spo2" , ylab = "Blood Urea Nitrogen",
+        main = "ABG Spo2 vs severity" ,
+        sub = "0 is mild or moderate , 1 is severe" , 
+        col = c("wheat" , "steelblue"))
+
+
+
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve & respirator
+ggplot(data_seve_conf, aes(x = coronaseve, fill =   respirator)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "respirator") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  ventricula
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    ventricula)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " ventricula") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  vpc
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    vpc)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "vpc") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  oxygenrequ
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    oxygenrequ)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "oxygenrequ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  cxrpneu
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    cxrpneu)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "cxrpneu") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  patchprsen
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    patchprsen)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "patchprsen") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  patchside
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    patchside)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = "patchside") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No lobe", "Bilateral lung lobe","Right", "Left")) +
+     theme_minimal()
+
+```
+
+
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  patchlobel
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    patchlobel)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " patchlobel") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Lower","Middle","Upper", "Lower+Middle" ,"Multi")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  oxygenreq1
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    oxygenreq1)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " oxygenreq1") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  noninvasie
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    noninvasie)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " noninvasie") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  invasive
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    invasive)) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " invasive") +
+     scale_x_discrete(labels =c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  lmwh 
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    lmwh )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " lmwh ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  lmwhdoseus
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    lmwhdoseus )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " lmwhdoseus ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("Not given", "OD", "BD")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  ramdesevir
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    ramdesevir )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " ramdesevir ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+```
+
+```{r}
+# Create a bar plot using ggplot between coronaseve &  steroid
+ggplot(data_seve_conf, aes(x = coronaseve, fill =    steroid )) +
+     geom_bar() +
+     labs(x = "coronaseve", fill = " steroid ") +
+     scale_x_discrete(labels = c("Mild to Moderate", "Severe")) +
+     scale_fill_discrete(labels = c("No", "Yes")) +
+     theme_minimal()
+
+```
+
+
+```{r}
+#error metrics -- Confusion Matrix
+err_metric=function(CM)
+{
+  TN =CM[2,2]
+  TP =CM[1,1]
+  FP =CM[2,1]
+  FN =CM[1,2]
+  Sensitivity = TP /(TP+FN)
+  precision =(TP)/(TP+FP)
+  recall_score =(FP)/(FP+TN)
+  Specificity =  TN /(FP + TN)
+  f1_score=2*((precision*recall_score)/(precision+recall_score))
+  accuracy_model  =(TP+TN)/(TP+TN+FP+FN)
+  False_positive_rate =(FP)/(FP+TN)
+  False_negative_rate =(FN)/(FN+TP)
+  print(paste("Precision value of the model: ",round(precision,2)))
+  print(paste("Accuracy of the model: ",round(accuracy_model,2)))
+  print(paste("Recall value of the model: ",round(recall_score,2)))
+  print(paste("False Positive rate of the model: ",round(False_positive_rate,2)))
+  print(paste("False Negative rate of the model: ",round(False_negative_rate,2)))
+  print(paste("f1 score of the model: ",round(f1_score,2)))
+  score_vec <- c(round(accuracy_model,2) , round(precision,2) , 
+                 round(Sensitivity , 2) ,  round(Specificity ,2))
+  return(score_vec)
+}
+
+```
+# Data Partition
+
+```{r}
+library(caTools)
+set.seed(9973)
+
+
+sample <- sample.split(data_seve$coronaseve , SplitRatio = 0.6)
+train_seve  <- subset(data_seve , sample == TRUE)
+test_seve   <- subset(data_seve , sample == FALSE)
+
+```
+
+
+
+**Random Forest Models**
+
+
+```{r}
+#considering all variabls
+set.seed(252525)
+rf_seve92 <- randomForest(coronaseve~., data = train_seve)
+rf_seve92
+
+# Prediction & Confusion Matrix - Test with all 92 variables
+p <- predict(rf_seve92, test_seve)
+confusionMatrix(p, test_seve$coronaseve)
+CM_rf_seve92 <- as.matrix(confusionMatrix(p, test_seve$coronaseve))
+CM_rf_seve92
+err_metric(CM_rf_seve92)
+score_vec_rf_seve92 <- err_metric(CM_rf_seve92)
+score_vec_rf_seve92
+```
+
+
+getNonRejectedFormula() gives us the formula that should be used while building 
+model
+
+
+```{r}
+# formula_nonmrejected_seve contains the formula with non rejected variables
+formula_nonrejected_seve <- getNonRejectedFormula(boruta_seve)
+formula_nonrejected_seve
+```
+
+# Random Forest model with 23 non rejected predictors
+```{r}
+
+rf_seve23<- randomForest(formula_nonrejected_seve, data=train_seve)
+
+rf_seve23
+# Prediction & Confusion Matrix - Test with 23 variables only
+p <- predict(rf_seve23, test_seve)
+confusionMatrix(p, test_seve$coronaseve)
+CM_rf_seve23  <- as.matrix(confusionMatrix(p, test_seve$coronaseve))
+err_metric(CM_rf_seve23)
+score_vec_rf_seve23 <- err_metric(CM_rf_seve23)
+score_vec_rf_seve23
+
+```
+
+**getConfirmedFormula()** gives us the formula that should be used while 
+building  model with confirmed variables i.e. variables that was not rejected 
+by *Boruta()*
+
+
+```{r}
+formula_confirmed_seve <- getConfirmedFormula(boruta_seve)
+formula_confirmed_seve
+```
+ 
+# model with 21 confirmed important predictors 
+
+```{r}
+rf_seve21<- randomForest(formula_confirmed_seve, data=train_seve)
+
+rf_seve21
+# Prediction & Confusion Matrix - Test with 21 important variables only
+p <- predict(rf_seve21, test_seve)
+confusionMatrix(p, test_seve$coronaseve)
+
+CM_rf_seve21 <- as.matrix(confusionMatrix(p, test_seve$coronaseve))
+err_metric(CM_rf_seve21)
+score_vec_rf_seve21 <- err_metric(CM_rf_seve21)
+score_vec_rf_seve21
+
+
+```
+
+
+
+
+**SVM for classification of Severity**
+
+```{r}
+# library(e1071) # library required for svm
+
+svmfit_seve <- svm(formula_confirmed_seve , data = train_seve,
+                    kernal = "linear" ) 
+summary(svmfit_seve)
+set.seed(9973)
+# tune() performs cross validation
+tune.out <- tune(svm , formula_confirmed_seve , data = train_seve, 
+                 kernal = "linear", 
+                 ranges = list(
+                   cost = c(  1.8, 2, 3 ,3.5)
+                   
+                 ))
+summary(tune.out)
+p<- predict(tune.out$best.model, newdata = test_seve)
+confusionMatrix(p , test_seve$coronaseve)
+
+CM_svmfit_seve <- as.matrix(confusionMatrix(p , test_seve$coronaseve))
+err_metric((CM_svmfit_seve))
+score_vec_svmfit_seve <- err_metric((CM_svmfit_seve))
+score_vec_svmfit_seve
+```
+**Death**
+
+
+Some variable that are not apt to include for the study of death
+Out of patient whose death occurred, only 6 death are noncovid or probably
+covid. So dropping those variables can be an option... Assuming all death are
+because of Covid only. 
+
+As we want to predict survival of patient so it's good to not keep *discharge* 
+or *los* ,length of stay, as predictors. 
+
+**Let's build model without them.**
+
+```{r}
+
+remove_col_unnecessary<-c( "name","coviddeath","noncovidde","procovidde",
+                           "discharge" , "los")
+
+data_death<-data_non_null[, !names(data_non_null) %in%  remove_col_unnecessary]
+
+#dim(data_death)
+
+#str(data_death)
+
+```
+
+Again we need to apply **Boruta()** to find out the features that are important 
+to find out the class of variable death
+
+```{r}
+# Feature Selection
+set.seed(111)
+boruta <- Boruta(death ~ ., 
+                 data = data_death ,
+                 maxRuns = 500)
+
+# The above command applies the Boruta feature selection algorithm to
+# the dataset data_death. The formula death ~ . specifies that
+# the variable death is the outcome variable, and . indicates that all other
+# variables in the dataset are considered as potential predictors. The doTrace
+# parameter controls the level of verbosity during the Boruta analysis, with
+# a value of 2 indicating more detailed output. The maxRuns parameter 
+# specifies the maximum number of iterations to run the algorithm. The result
+# of the Boruta analysis is stored in the boruta object.
+
+print(boruta)
+
+#The above command prints the summary or information about the boruta object.
+# It displays the variables considered in the Boruta analysis, their 
+# importance scores, and the final decision on whether they are selected
+# as important predictors or not. This information helps assess the relevance
+# of variables in predicting the outcome variable (death) based on the
+# Boruta analysis.
+
+plot(boruta, las = 2, cex.axis = 0.7)
+# Above command is used to create a plot of the Boruta analysis results. 
+# The boruta object is passed as the argument, and additional parameters las
+# and cex.axis are used to modify the appearance of the plot. las controls
+# the orientation of the axis labels, and cex.axis controls the size of the
+# axis labels. By customizing these parameters, you can enhance the 
+# readability of the plot and visualize the importance of variables determined 
+# by Boruta.
+
+plotImpHistory(boruta)
+
+#Above command is used to create a plot of the variable importance history
+# during the Boruta analysis. The boruta object is passed as the argument, 
+# and the function generates a plot that shows the change in variable 
+# importance over iterations. This plot helps understand how the importance
+# of variables evolves during the Boruta feature selection process and can
+# assist in determining the optimal set of variables to include in the 
+# final model.
+
+# Tentative Fix
+bor <- TentativeRoughFix(boruta)
+print(bor)
+att_death <- attStats(boruta)
+
+```
+ **Data Partition**
+
+```{r}
+set.seed(9973)
+sample <- sample.split(data_death$death , SplitRatio = 0.6)
+train_death  <- subset(data_death , sample == TRUE)
+test_death   <- subset(data_death , sample == FALSE)
+
+```
+
+***Random Forest Models***
+
+```{r}
+#considering all 95 variabls
+set.seed(252525)
+rf_death95 <- randomForest(death~., data = train_death)
+rf_death95
+
+# Prediction & Confusion Matrix - Test with all 95 variables
+p <- predict(rf_death95, test_death)
+confusionMatrix(p, test_death$death)
+
+
+CM_rf_death95 <- as.matrix(confusionMatrix(p, test_death$death))
+err_metric(CM_rf_death95)
+score_vec_rf_death95 <- err_metric(CM_rf_death95)
+score_vec_rf_death95
+
+```
+# formula_nonrejected_death
+
+```{r}
+formula_nonrejected_death <- getNonRejectedFormula(boruta)
+formula_nonrejected_death
+
+```
+# model with 17 non rejected predictors
+
+```{r}
+rf_death17<- randomForest(formula_nonrejected_death, data=train_death)
+
+rf_death17
+# Prediction & Confusion Matrix - Test with 17 variables only
+p <- predict(rf_death17, test_death)
+confusionMatrix(p, test_death$death)
+
+
+CM_rf_death17 <- as.matrix(confusionMatrix(p, test_death$death))
+err_metric(CM_rf_death17)
+score_vec_rf_death17 <- err_metric(CM_rf_death17)
+score_vec_rf_death17
+
+```
+
+# formula_confirmed death
+
+```{r}
+formula_confirmed_death <- getConfirmedFormula(boruta)
+formula_confirmed_death
+
+```
+# model with confirmed 15 important predictors
+
+```{r}
+rf_death15<- randomForest(formula_confirmed_death, data=train_death)
+
+rf_death15
+# Prediction & Confusion Matrix - Test with 15 important variables only
+p <- predict(rf_death15, test_death)
+confusionMatrix(p, test_death$death)
+CM_rf_death15 <- as.matrix(confusionMatrix(p, test_death$death))
+err_metric(CM_rf_death15)
+score_vec_rf_death15 <- err_metric(CM_rf_death15)
+score_vec_rf_death15
+```
+
+
+***SVM***
+
+```{r}
+svmfit_death <- svm(formula_confirmed_death , data = train_death,
+                    kernal = "linear" ) 
+summary(svmfit_death)
+set.seed(9973)
+# tune() performs cross-validation
+tune.out <- tune(svm , formula_confirmed_death , data = train_death, 
+                 kernal = "linear", 
+                 ranges = list(
+                   cost = c(0.5 , 1, 1.5 , 2, 3, 10)
+                   
+                 ))
+summary(tune.out)
+p<- predict(tune.out$best.model, newdata = test_death)
+confusionMatrix(p , test_death$death)
+CM_svmfit_death <- as.matrix(confusionMatrix(p , test_death$death))
+err_metric(CM_svmfit_death)
+score_vec_svmfit_death <- err_metric(CM_svmfit_death)
+score_vec_svmfit_death
+
+```
+
+**Comaprision of models**
+```{r}
+df <- rbind(score_vec_rf_seve92 , score_vec_rf_seve23 , score_vec_rf_seve21,
+            score_vec_svmfit_seve , score_vec_rf_death95, score_vec_rf_death17,
+            score_vec_rf_death15 , score_vec_svmfit_death)
+colnames(df) <- c("Accuracy" , "Precision" , "Sensitivity" , "Specificity")
+df <- as.data.frame(df)
+df
+
+
+```
+
+
+```{r}
+end_time <- Sys.time()
+execution_time <- end_time - start_time
+execution_time
+```
+
+
+
+
